@@ -5,7 +5,7 @@ package kademlia
 // other groups' code.
 
 import (
-	//	"fmt"
+	"fmt"
 	"net"
 )
 
@@ -163,9 +163,11 @@ func (kc *KademliaCore) FindValue(req FindValueRequest, res *FindValueResult) er
 
 	// not found
 	if ok == false {
+		//fmt.Println("before the FindKClosest")
 		k_mutex.Lock()
 		res.Nodes = kc.kademlia.FindKClosest(key, req.Sender.NodeID)
 		k_mutex.Unlock()
+		//fmt.Println("After the FindKClosest")
 		res.Value = nil
 	} else {
 		res.Nodes = nil

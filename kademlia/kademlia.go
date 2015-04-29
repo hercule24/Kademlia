@@ -215,10 +215,11 @@ func (k *Kademlia) DoFindValue(contact *Contact, searchKey ID) string {
 
 	if res.Value != nil {
 		//fmt.Printf("%v\n", string(res.Value))
-		fmt.Printf("%v %v\n", contact.NodeID, res.Value)
+		fmt.Printf("From node: %s, found value: %s\n", contact.NodeID.AsString(), string(res.Value))
 		return "OK: Value found"
 	} else {
 		for _, v := range res.Nodes {
+			//fmt.Printf("length of res.Nodes = %d", len(res.Nodes))
 			fmt.Printf("Node ID: %s\n", v.NodeID.AsString())
 		}
 

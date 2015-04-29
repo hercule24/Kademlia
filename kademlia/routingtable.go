@@ -157,7 +157,7 @@ func (k *Kademlia) FindKClosest(target ID, requestor ID) []Contact {
 		}
 
 		if len(temp) < bucket_size {
-			for i := bucket_index + 1; i < bucket_index; i++ {
+			for i := bucket_index + 1; i < IDBits; i++ {
 				b := k.table.buckets[i]
 				for e := b.Front(); e != nil; e = e.Next() {
 					c := *(e.Value.(*Contact))
