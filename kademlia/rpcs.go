@@ -5,7 +5,7 @@ package kademlia
 // other groups' code.
 
 import (
-	"fmt"
+	//	"fmt"
 	"net"
 )
 
