@@ -40,6 +40,9 @@ func main() {
 	// Confirm our server is up with a PING request and then exit.
 	// Your code should loop forever, reading instructions from stdin and
 	// printing their results to stdout. See README.txt for more details.
+
+	//fmt.Println("before the dial")
+
 	client, err := rpc.DialHTTP("tcp", firstPeerStr)
 	if err != nil {
 		log.Fatal("DialHTTP: ", err)
@@ -54,10 +57,21 @@ func main() {
 
 	ping.MsgID = kademlia.NewRandomID()
 	var pong kademlia.PongMessage
+
+	//fmt.Println("before the call")
+
 	err = client.Call("KademliaCore.Ping", ping, &pong)
+
+	// added by me
+	kadem.Update(&pong.Sender)
+
 	if err != nil {
 		log.Fatal("Call: ", err)
 	}
+
+	// added by me
+	//fmt.Println("before the ping msg, pong msg")
+
 	log.Printf("ping msgID: %s\n", ping.MsgID.AsString())
 	log.Printf("pong msgID: %s\n", pong.MsgID.AsString())
 

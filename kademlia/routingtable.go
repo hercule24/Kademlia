@@ -3,41 +3,45 @@ package kademlia
 import (
 	"container/list"
 	//"fmt"
+	"log"
+	"net/rpc"
 	"sort"
-	"strings"
+	"strconv"
+	//"strings"
 )
 
 const bucket_size = 20
 
 type RoutingTable struct {
-	node    Contact
 	buckets [IDBits]*list.List
-	k       *Kademlia
 }
 
-func newRoutingTable(node *Contact, k *Kademlia) (ret *RoutingTable) {
+func newRoutingTable() (ret *RoutingTable) {
 	ret = new(RoutingTable)
 	for i := 0; i < 8*IDBytes; i++ {
 		ret.buckets[i] = list.New()
 	}
 
-	ret.node = *node
-	ret.k = k
 	return
 }
 
-type Contacts []Contact
+type Contact_Dist struct {
+	contact Contact
+	dist    int
+}
 
-func (a Contacts) Len() int {
+type Contact_Dist_Slice []Contact_Dist
+
+func (a Contact_Dist_Slice) Len() int {
 	return len(a)
 }
 
-func (a Contacts) Swap(i, j int) {
+func (a Contact_Dist_Slice) Swap(i, j int) {
 	a[i], a[j] = a[j], a[i]
 }
 
-func (a Contacts) Less(i, j int) bool {
-	return a[i].NodeID.Less(a[j].NodeID)
+func (a Contact_Dist_Slice) Less(i, j int) bool {
+	return a[i].dist < a[j].dist
 }
 
 func (k *Kademlia) Update(contact *Contact) {
@@ -48,77 +52,141 @@ func (k *Kademlia) Update(contact *Contact) {
 
 	prefix_length := contact.NodeID.Xor(k.NodeID).PrefixLen()
 	//fmt.Printf("inside RoutingTable: prefix_length = %d\n", prefix_length)
+
 	bucket := k.table.buckets[IDBits-1-prefix_length]
-	_, ok := k.FindContact(contact.NodeID)
 
-	// doesn't exist
-	if ok != nil {
-		if bucket.Len() < bucket_size {
-			//fmt.Println("inside update: doesn't exist")
-			bucket.PushBack(contact)
-		} else {
-			//TODO:
-			// ping the least recently contacted node, head of the bucket
-			e := bucket.Front()
-			c := e.Value.(Contact)
-			msg := k.DoPing(c.Host, c.Port)
-
-			if strings.HasPrefix(msg, "OK") {
-				// ignore, may not fullfill the protocol
-				bucket.MoveAfter(bucket.Front(), bucket.Front().Next())
-			} else {
-				// update least recently seen
-				bucket.Remove(bucket.Front())
-				bucket.PushBack(contact)
-			}
-
+	// if found
+	for e := bucket.Front(); e != nil; e = e.Next() {
+		if e.Value.(*Contact).NodeID.Equals(contact.NodeID) {
+			bucket.MoveToBack(e)
+			return
 		}
+	}
+
+	// if not found
+	if bucket.Len() < bucket_size {
+		//fmt.Println("inside update: doesn't exist")
+		bucket.PushBack(contact)
 	} else {
-		for e := bucket.Front(); e != nil; e = e.Next() {
-			if e.Value.(*Contact).NodeID.Equals(contact.NodeID) {
-				bucket.MoveToBack(e)
-			}
+		//TODO:
+		// ping the least recently contacted node, head of the bucket
+		e := bucket.Front()
+		c := e.Value.(Contact)
+
+		ipAddrStrings := c.Host.String()
+		sock_addr := ipAddrStrings + ":" + strconv.Itoa(int(c.Port))
+		client, err := rpc.DialHTTP("tcp", sock_addr)
+
+		if err != nil {
+			log.Fatal("ERR: ", err)
 		}
+
+		pong := new(PongMessage)
+
+		ping := PingMessage{k.SelfContact, NewRandomID()}
+		err = client.Call("KademliaCore.Ping", ping, pong)
+
+		if err == nil {
+			// ignore, may not fullfill the protocol
+			bucket.MoveToBack(e)
+		} else {
+			// update least recently seen
+			bucket.Remove(bucket.Front())
+			bucket.PushBack(contact)
+		}
+
 	}
 
 }
 
-func (table *RoutingTable) FindKClosest(target ID) []Contact {
+func (k *Kademlia) FindKClosest(target ID, requestor ID) []Contact {
 	var ret []Contact
-	index := target.Xor(table.node.NodeID).PrefixLen()
-	bucket := table.buckets[IDBits-1-index]
+	var temp []Contact_Dist
 
-	for e := bucket.Front(); e != nil; e = e.Next() {
-		ret = append(ret, *(e.Value.(*Contact)))
-	}
+	// if self
+	if target.Equals(k.NodeID) {
+		s := Contact_Dist{k.SelfContact, 0}
+		temp = append(temp, s)
 
-	count := len(ret)
-
-	if count < bucket_size {
 		for i := 0; i < IDBits; i++ {
-			if i == index {
+			b := k.table.buckets[i]
+			for e := b.Front(); e != nil; e = e.Next() {
+				c := *(e.Value.(*Contact))
+				if c.NodeID.Equals(requestor) {
+					continue
+				}
+				dist := IDBits - c.NodeID.Xor(target).PrefixLen()
+				s := Contact_Dist{c, dist}
+				temp = append(temp, s)
+			}
+
+			if len(temp) >= bucket_size {
+				break
+			}
+		}
+
+	} else {
+		index := target.Xor(k.NodeID).PrefixLen()
+		bucket := k.table.buckets[IDBits-1-index]
+
+		for e := bucket.Front(); e != nil; e = e.Next() {
+			c := *(e.Value.(*Contact))
+			if c.NodeID.Equals(requestor) {
 				continue
-			} else {
-				b := table.buckets[i]
+			}
+			dist := IDBits - c.NodeID.Xor(target).PrefixLen()
+			s := Contact_Dist{c, dist}
+			temp = append(temp, s)
+		}
+
+		if len(temp) < bucket_size {
+			for i := 0; i < index; i++ {
+				b := k.table.buckets[i]
 				for e := b.Front(); e != nil; e = e.Next() {
-					ret = append(ret, *(e.Value.(Contact)))
-					count++
+					c := *(e.Value.(*Contact))
+					if c.NodeID.Equals(requestor) {
+						continue
+					}
+					dist := IDBits - c.NodeID.Xor(target).PrefixLen()
+					s := Contact_Dist{c, dist}
+					temp = append(temp, s)
 				}
 			}
 		}
-	}
 
-	if count < 20 {
-		for i := index + 1; i < IDBits; i++ {
-			b := table.buckets[i]
-			for e := b.Front(); e != nil; e = e.Next() {
-				ret = append(ret, e.Value.(Contact))
-				count++
+		if len(temp) < bucket_size {
+			for i := index + 1; i < IDBits; i++ {
+				b := k.table.buckets[i]
+				for e := b.Front(); e != nil; e = e.Next() {
+					c := *(e.Value.(*Contact))
+					if c.NodeID.Equals(requestor) {
+						continue
+					}
+					dist := IDBits - c.NodeID.Xor(target).PrefixLen()
+					s := Contact_Dist{c, dist}
+					temp = append(temp, s)
+				}
+
+				if len(temp) >= bucket_size {
+					break
+				}
+
 			}
 		}
 	}
 
-	sort.Sort(Contacts(ret))
-	return ret[0:21]
+	sort.Sort(Contact_Dist_Slice(temp))
 
+	if len(temp) < bucket_size {
+		for i := 0; i < len(temp); i++ {
+			ret = append(ret, temp[i].contact)
+		}
+	} else {
+		for i := 0; i < bucket_size; i++ {
+			ret = append(ret, temp[i].contact)
+		}
+
+	}
+
+	return ret
 }

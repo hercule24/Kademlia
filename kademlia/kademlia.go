@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/rpc"
 	"strconv"
+	"sync"
 )
 
 const (
@@ -17,6 +18,9 @@ const (
 	b     = 8 * IDBytes
 	k     = 20
 )
+
+var k_mutex = &sync.Mutex{}
+var v_mutex = &sync.Mutex{}
 
 // Kademlia type. You can put whatever state you need in this.
 type Kademlia struct {
@@ -57,7 +61,7 @@ func NewKademlia(laddr string) *Kademlia {
 	}
 	k.SelfContact = Contact{k.NodeID, host, uint16(port_int)}
 
-	k.table = newRoutingTable(&k.SelfContact, k)
+	k.table = newRoutingTable()
 
 	k.value_map = make(map[ID][]byte)
 
@@ -82,7 +86,10 @@ func (k *Kademlia) FindContact(nodeId ID) (*Contact, error) {
 
 	prefix_length := k.NodeID.Xor(nodeId).PrefixLen()
 	//fmt.Printf("inside kademlia: prefix_length = %d\n", prefix_length)
+
+	k_mutex.Lock()
 	b := k.table.buckets[IDBits-1-prefix_length]
+	k_mutex.Unlock()
 
 	for e := b.Front(); e != nil; e = e.Next() {
 		if e.Value.(*Contact).NodeID.Equals(nodeId) {
@@ -114,15 +121,16 @@ func (k *Kademlia) DoPing(host net.IP, port uint16) string {
 		return "ERR: can't do ping"
 	}
 
+	k_mutex.Lock()
 	k.Update(&pong.Sender)
-	msg := "OK: Ping success!"
-	return msg
+	k_mutex.Unlock()
+	return "OK: Ping success!"
 
 }
 
 func (k *Kademlia) DoStore(contact *Contact, key ID, value []byte) string {
 	// If all goes well, return "OK: <output>", otherwise print "ERR: <messsage>"
-	req := StoreRequest{*contact, NewRandomID(), key, value}
+	req := StoreRequest{k.SelfContact, NewRandomID(), key, value}
 
 	ipAddrStrings := contact.Host.String()
 	port := strconv.Itoa(int(contact.Port))
@@ -134,21 +142,24 @@ func (k *Kademlia) DoStore(contact *Contact, key ID, value []byte) string {
 		return "ERR: can't reach the server"
 	}
 
-	var res StoreResult
+	res := new(StoreResult)
 
-	err = client.Call("KademliaCore.Store", req, &res)
+	err = client.Call("KademliaCore.Store", req, res)
 
 	if err != nil {
 		return "ERR: can't do store"
 	}
 
-	msg := "OK: StoreResult: " + res.MsgID.AsString()
-	return msg
+	k_mutex.Lock()
+	k.Update(contact)
+	k_mutex.Unlock()
+
+	return "OK: store success!"
 }
 
 func (k *Kademlia) DoFindNode(contact *Contact, searchKey ID) string {
 	// If all goes well, return "OK: <output>", otherwise print "ERR: <messsage>"
-	req := FindNodeRequest{*contact, NewRandomID(), searchKey}
+	req := FindNodeRequest{k.SelfContact, NewRandomID(), searchKey}
 	ipAddrStrings := contact.Host.String()
 	port := strconv.Itoa(int(contact.Port))
 
@@ -159,22 +170,28 @@ func (k *Kademlia) DoFindNode(contact *Contact, searchKey ID) string {
 		return "ERR: can't reach the server"
 	}
 
-	var res FindNodeResult
+	res := new(FindNodeResult)
 
-	err = client.Call("KademliaCore.FindNode", req, &res)
+	err = client.Call("KademliaCore.FindNode", req, res)
 
 	if err != nil {
-		return "can't do find node"
+		return "ERR: can't do find node"
 	}
 
-	// nodes find not used, why?
-	msg := "OK: FindNode: " + res.MsgID.AsString()
-	return msg
+	k_mutex.Lock()
+	k.Update(contact)
+	k_mutex.Unlock()
+
+	for _, v := range res.Nodes {
+		fmt.Printf("Node ID: %s\n", v.NodeID.AsString())
+	}
+
+	return "OK: FindNode success!"
 }
 
 func (k *Kademlia) DoFindValue(contact *Contact, searchKey ID) string {
 	// If all goes well, return "OK: <output>", otherwise print "ERR: <messsage>"
-	req := FindValueRequest{*contact, NewRandomID(), searchKey}
+	req := FindValueRequest{k.SelfContact, NewRandomID(), searchKey}
 	ipAddrStrings := contact.Host.String()
 	port := strconv.Itoa(int(contact.Port))
 
@@ -185,28 +202,41 @@ func (k *Kademlia) DoFindValue(contact *Contact, searchKey ID) string {
 		return "ERR: can't reach the server"
 	}
 
-	var res FindValueResult
+	res := new(FindValueResult)
 
-	err = client.Call("KademliaCore.FindValue", req, &res)
+	err = client.Call("KademliaCore.FindValue", req, res)
 	if err != nil {
 		return "can't do find value"
 	}
 
-	// values find not used, why?
-	msg := "OK: FindValue: " + res.MsgID.AsString()
-	return msg
+	k_mutex.Lock()
+	k.Update(contact)
+	k_mutex.Unlock()
+
+	if res.Value != nil {
+		//fmt.Printf("%v\n", string(res.Value))
+		fmt.Printf("%v %v\n", contact.NodeID, res.Value)
+		return "OK: Value found"
+	} else {
+		for _, v := range res.Nodes {
+			fmt.Printf("Node ID: %s\n", v.NodeID.AsString())
+		}
+
+		return "ERR: Value not found"
+	}
 
 }
 
 func (k *Kademlia) LocalFindValue(searchKey ID) string {
 	// If all goes well, return "OK: <output>", otherwise print "ERR: <messsage>"
+	v_mutex.Lock()
 	value, ok := k.value_map[searchKey]
+	v_mutex.Unlock()
 	if ok == false {
 		return "ERR: can't find value locally"
 	} else {
 		// shall we include the valude this way?
-		msg := "OK: " + string(value)
-		return msg
+		return "OK: " + string(value)
 	}
 }
 

@@ -5,6 +5,7 @@ package kademlia
 // other groups' code.
 
 import (
+	//	"fmt"
 	"net"
 )
 
@@ -38,7 +39,13 @@ func (kc *KademliaCore) Ping(ping PingMessage, pong *PongMessage) error {
 	// Specify the sender
 	pong.Sender = kc.kademlia.SelfContact
 	// Update contact, etc
+
+	//fmt.Println("before the ping lock")
+	k_mutex.Lock()
+	//fmt.Println("inside the ping lock")
 	kc.kademlia.Update(&ping.Sender)
+	k_mutex.Unlock()
+	//fmt.Println("After the ping lock")
 	return nil
 }
 
@@ -64,11 +71,16 @@ func (kc *KademliaCore) Store(req StoreRequest, res *StoreResult) error {
 	//return &NotFoundError{req.Key, "Not found"}
 	//}
 
+	v_mutex.Lock()
 	kc.kademlia.value_map[req.Key] = req.Value
+	v_mutex.Unlock()
 
 	// should the MsgId the same?
 	res.MsgID = CopyID(req.MsgID)
+
+	k_mutex.Lock()
 	kc.kademlia.Update(&req.Sender)
+	k_mutex.Unlock()
 
 	res.Err = nil
 
@@ -94,14 +106,18 @@ type FindNodeResult struct {
 func (kc *KademliaCore) FindNode(req FindNodeRequest, res *FindNodeResult) error {
 	// TODO: Implement.
 	// are we going to use the NodeID or the MsgId
+	k_mutex.Lock()
 	kc.kademlia.Update(&req.Sender)
+	k_mutex.Unlock()
 
 	node := req.NodeID
 
 	// copy?
 	res.MsgID = CopyID(req.MsgID)
 
-	res.Nodes = kc.kademlia.table.FindKClosest(node)
+	k_mutex.Lock()
+	res.Nodes = kc.kademlia.FindKClosest(node, req.Sender.NodeID)
+	k_mutex.Unlock()
 
 	// always nil ??
 	res.Err = nil
@@ -129,6 +145,10 @@ type FindValueResult struct {
 
 func (kc *KademliaCore) FindValue(req FindValueRequest, res *FindValueResult) error {
 	// TODO: Implement.
+	k_mutex.Lock()
+	kc.kademlia.Update(&req.Sender)
+	k_mutex.Unlock()
+
 	key := req.Key
 
 	// copy?
@@ -137,11 +157,16 @@ func (kc *KademliaCore) FindValue(req FindValueRequest, res *FindValueResult) er
 	// always nil?
 	res.Err = nil
 
+	v_mutex.Lock()
 	value, ok := kc.kademlia.value_map[key]
+	v_mutex.Unlock()
 
 	// not found
 	if ok == false {
-		res.Nodes = kc.kademlia.table.FindClosest(key)
+		k_mutex.Lock()
+		res.Nodes = kc.kademlia.FindKClosest(key, req.Sender.NodeID)
+		k_mutex.Unlock()
+		res.Value = nil
 	} else {
 		res.Nodes = nil
 		res.Value = value
