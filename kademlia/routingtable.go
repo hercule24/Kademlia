@@ -126,8 +126,10 @@ func (k *Kademlia) FindKClosest(target ID, requestor ID) []Contact {
 		}
 
 	} else {
-		index := target.Xor(k.NodeID).PrefixLen()
-		bucket := k.table.buckets[IDBits-1-index]
+		prefix_length := target.Xor(k.NodeID).PrefixLen()
+		bucket_index := IDBits - 1 - prefix_length
+
+		bucket := k.table.buckets[bucket_index]
 
 		for e := bucket.Front(); e != nil; e = e.Next() {
 			c := *(e.Value.(*Contact))
@@ -140,7 +142,7 @@ func (k *Kademlia) FindKClosest(target ID, requestor ID) []Contact {
 		}
 
 		if len(temp) < bucket_size {
-			for i := 0; i < index; i++ {
+			for i := 0; i < bucket_index; i++ {
 				b := k.table.buckets[i]
 				for e := b.Front(); e != nil; e = e.Next() {
 					c := *(e.Value.(*Contact))
@@ -155,7 +157,7 @@ func (k *Kademlia) FindKClosest(target ID, requestor ID) []Contact {
 		}
 
 		if len(temp) < bucket_size {
-			for i := index + 1; i < IDBits; i++ {
+			for i := bucket_index + 1; i < bucket_index; i++ {
 				b := k.table.buckets[i]
 				for e := b.Front(); e != nil; e = e.Next() {
 					c := *(e.Value.(*Contact))
