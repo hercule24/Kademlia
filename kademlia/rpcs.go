@@ -116,7 +116,7 @@ func (kc *KademliaCore) FindNode(req FindNodeRequest, res *FindNodeResult) error
 	res.MsgID = CopyID(req.MsgID)
 
 	k_mutex.Lock()
-	res.Nodes = kc.kademlia.FindKClosest(node, req.Sender.NodeID)
+	res.Nodes = kc.kademlia.FindKClosest(node, req.Sender.NodeID, 20)
 	k_mutex.Unlock()
 
 	// always nil ??
@@ -165,7 +165,7 @@ func (kc *KademliaCore) FindValue(req FindValueRequest, res *FindValueResult) er
 	if ok == false {
 		//fmt.Println("before the FindKClosest")
 		k_mutex.Lock()
-		res.Nodes = kc.kademlia.FindKClosest(key, req.Sender.NodeID)
+		res.Nodes = kc.kademlia.FindKClosest(key, req.Sender.NodeID, 20)
 		k_mutex.Unlock()
 		//fmt.Println("After the FindKClosest")
 		res.Value = nil

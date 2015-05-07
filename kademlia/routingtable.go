@@ -99,7 +99,7 @@ func (k *Kademlia) Update(contact *Contact) {
 
 }
 
-func (k *Kademlia) FindKClosest(target ID, requestor ID) []Contact {
+func (k *Kademlia) FindKClosest(target ID, requestor ID, alpha int) []Contact {
 	var ret []Contact
 	var temp []Contact_Dist
 
@@ -120,7 +120,7 @@ func (k *Kademlia) FindKClosest(target ID, requestor ID) []Contact {
 				temp = append(temp, s)
 			}
 
-			if len(temp) >= bucket_size {
+			if len(temp) >= alpha {
 				break
 			}
 		}
@@ -141,7 +141,7 @@ func (k *Kademlia) FindKClosest(target ID, requestor ID) []Contact {
 			temp = append(temp, s)
 		}
 
-		if len(temp) < bucket_size {
+		if len(temp) < alpha {
 			for i := 0; i < bucket_index; i++ {
 				b := k.table.buckets[i]
 				for e := b.Front(); e != nil; e = e.Next() {
@@ -156,7 +156,7 @@ func (k *Kademlia) FindKClosest(target ID, requestor ID) []Contact {
 			}
 		}
 
-		if len(temp) < bucket_size {
+		if len(temp) < alpha {
 			for i := bucket_index + 1; i < IDBits; i++ {
 				b := k.table.buckets[i]
 				for e := b.Front(); e != nil; e = e.Next() {
@@ -169,7 +169,7 @@ func (k *Kademlia) FindKClosest(target ID, requestor ID) []Contact {
 					temp = append(temp, s)
 				}
 
-				if len(temp) >= bucket_size {
+				if len(temp) >= alpha {
 					break
 				}
 
@@ -179,12 +179,12 @@ func (k *Kademlia) FindKClosest(target ID, requestor ID) []Contact {
 
 	sort.Sort(Contact_Dist_Slice(temp))
 
-	if len(temp) < bucket_size {
+	if len(temp) < alpha {
 		for i := 0; i < len(temp); i++ {
 			ret = append(ret, temp[i].contact)
 		}
 	} else {
-		for i := 0; i < bucket_size; i++ {
+		for i := 0; i < alpha; i++ {
 			ret = append(ret, temp[i].contact)
 		}
 
