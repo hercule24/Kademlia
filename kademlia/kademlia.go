@@ -4,6 +4,8 @@ package kademlia
 // as a receiver for the RPC methods, which is required by that package.
 
 import (
+	"container/heap"
+	//"container/list"
 	"fmt"
 	"log"
 	"net"
@@ -11,7 +13,19 @@ import (
 	"net/rpc"
 	"strconv"
 	"sync"
+	"time"
 )
+
+type ContactWrapper struct {
+	contact   Contact
+	dist      int
+	active    bool
+	contacted bool
+}
+
+//type Channel chan []*ContactWrapper
+
+type ContactHeap []*ContactWrapper
 
 const (
 	alpha = 3
@@ -19,8 +33,48 @@ const (
 	k     = 20
 )
 
+var short_list *ContactHeap
+
+//var active_num int = 0
+var closest_node Contact
+
 var k_mutex = &sync.Mutex{}
+
+// for locking value_map
 var v_mutex = &sync.Mutex{}
+
+// for locking short_list
+var s_mutex = &sync.Mutex{}
+
+// for locking number of active nodes
+//var n_mutex = &sync.Mutex{}
+
+// for locking closesest_node
+var c_mutex = &sync.Mutex{}
+
+func (h ContactHeap) Len() int {
+	return len(h)
+}
+
+func (h ContactHeap) Less(i, j int) bool {
+	return h[i].dist < h[j].dist
+}
+
+func (h ContactHeap) Swap(i, j int) {
+	h[i], h[j] = h[j], h[i]
+}
+
+func (h *ContactHeap) Push(x interface{}) {
+	*h = append(*h, x.(*ContactWrapper))
+}
+
+func (h *ContactHeap) Pop() interface{} {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[:n-1]
+	return x
+}
 
 // Kademlia type. You can put whatever state you need in this.
 type Kademlia struct {
@@ -241,10 +295,174 @@ func (k *Kademlia) LocalFindValue(searchKey ID) string {
 	}
 }
 
+func (k *Kademlia) sendFindNode(cw *ContactWrapper, id ID) {
+	contact := cw.contact
+	req := FindNodeRequest{k.SelfContact, NewRandomID(), id}
+	ipAddrStrings := contact.Host.String()
+	port := strconv.Itoa(int(contact.Port))
+
+	sock_addr := ipAddrStrings + ":" + port
+	client, err := rpc.DialHTTP("tcp", sock_addr)
+
+	//short_list = new(ContactHeap)
+
+	cw.contacted = true
+
+	if err != nil {
+		// should we return here
+		cw.active = false
+		//s_mutex.Lock()
+		//for i := 0; i < len(*short_list); i++ {
+		//	if (*short_list)[i].(*ContactWrapper).contact.NodeID.Equals(cw.contact.NodeID) {
+		//	        // It's mentioned in the spec, the node should be removed temporarily,
+		//		// but how???
+		//		heap.Remove(short_list, i)
+
+		//	}
+
+		//}
+		//s_mutex.Unlock()
+		return
+	}
+
+	res := new(FindNodeResult)
+
+	err = client.Call("KademliaCore.FindNode", req, res)
+
+	if err != nil {
+		cw.active = false
+		return
+		//s_mutex.Lock()
+		//for i := 0; i < len(*short_list); i++ {
+		//	if (*short_list)[i].(*ContactWrapper).contact.NodeID.Equals(cw.contact.NodeID) {
+		//		heap.Remove(short_list, i)
+
+		//	}
+
+		//}
+		//s_mutex.Unlock()
+	}
+
+	cw.active = true
+
+	for i := 0; i < len(res.Nodes); i++ {
+		s_mutex.Lock()
+
+		exist := false
+		for j := 0; j < len(*short_list); j++ {
+			if res.Nodes[i].NodeID.Equals((*short_list)[j].contact.NodeID) {
+				exist = true
+			}
+		}
+
+		// add only non existent node
+		if !exist {
+
+			dist := res.Nodes[i].NodeID.Xor(id).PrefixLen()
+
+			item := new(ContactWrapper)
+			item.contact = res.Nodes[i]
+			item.dist = dist
+			item.contacted = false
+			item.active = false
+			heap.Push(short_list, item)
+		}
+
+		s_mutex.Unlock()
+	}
+
+}
+
 func (k *Kademlia) DoIterativeFindNode(id ID) string {
 	// For project 2!
 	//log.Printf("inside the DoIterativeFindNode")
-	return "ERR: Not implemented"
+	first_alpha := k.FindKClosest(id, k.NodeID, alpha)
+	closest_node = first_alpha[0]
+
+	//wrapper_chan := make(Channel)
+
+	//var short_list ContactHeap
+	short_list = new(ContactHeap)
+
+	for i := 0; i < len(first_alpha); i++ {
+		dist := first_alpha[i].NodeID.Xor(id).PrefixLen()
+
+		item := new(ContactWrapper)
+		item.contact = first_alpha[i]
+		item.dist = dist
+		item.active = false
+		item.contacted = false
+
+		*short_list = append(*short_list, item)
+	}
+
+	prev_length := len(*short_list)
+
+	heap.Init(short_list)
+
+	// stops when there are 20 active,
+	// or no contact returned are closer than currently
+	// exist in the short list.
+
+	for {
+		//var curr_alpha [alpha]*ContactWrapper
+		// sends alpha RPCs in one cycle
+		count := 0
+		s_mutex.Lock()
+		for i := 0; i < len(*short_list) && count < alpha; i++ {
+			if !(*short_list)[i].contacted {
+				go k.sendFindNode((*short_list)[i], id)
+				count++
+			}
+		}
+		s_mutex.Unlock()
+
+		// because no top function provided
+		// so need to repush the nodes back in
+		//for i := 0; i < alpha; i++ {
+		//	if curr_alpha[i].active {
+		//		s_mutex.Lock()
+		//		heap.Push(short_list, curr_alpha[i])
+		//		s_mutex.Unlock()
+		//	}
+		//}
+
+		time.Sleep(300 * time.Millisecond)
+
+		s_mutex.Lock()
+		// remove those contacted but not active node
+		for i := 0; i < len(*short_list); i++ {
+			if (*short_list)[i].contacted && !(*short_list)[i].active {
+				heap.Remove(short_list, i)
+			}
+		}
+
+		temp := heap.Pop(short_list).(*ContactWrapper).contact
+
+		// larger than prev_length means
+		// the short_list has been changed
+		if len(*short_list) > prev_length && temp.NodeID.Equals(closest_node.NodeID) {
+			return "OK"
+		} else {
+			closest_node = temp
+		}
+
+		active_num := 0
+		for i := 0; i < len(*short_list); i++ {
+			if (*short_list)[i].active {
+				active_num++
+				if active_num == 20 {
+					// return value says K triples returned and converted to string
+					return "OK"
+				}
+
+			}
+		}
+
+		prev_length = len(*short_list)
+		s_mutex.Unlock()
+	}
+
 }
 func (k *Kademlia) DoIterativeStore(key ID, value []byte) string {
 	// For project 2!
