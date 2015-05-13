@@ -276,7 +276,10 @@ func executeLine(k *kademlia.Kademlia, line string) (response string) {
 		}
 		for _, v := range k.DoIterativeFindNode(id) {
 			response += v.NodeID.AsString() + "\n"
+
 		}
+		//fmt.Println("our response")
+		//fmt.Println(response)
 
 	case toks[0] == "iterativeStore":
 		// perform an iterative store
