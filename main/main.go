@@ -84,6 +84,9 @@ func main() {
 			log.Fatal(err)
 		}
 		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
 		resp := executeLine(kadem, line)
 		if resp == "quit" {
 			quit = true
@@ -260,11 +263,13 @@ func executeLine(k *kademlia.Kademlia, line string) (response string) {
 	case toks[0] == "iterativeFindNode":
 		//fmt.Println("inside iterativeFindNode")
 		// perform an iterative find node
-		if len(toks) < 2 || len(toks) > 2 {
+		//if len(toks) < 2 || len(toks) > 2 {
+		if len(toks) != 2 {
 			response = "usage: iterativeFindNode [nodeID]"
 			return
 		}
-		id, err := kademlia.IDFromString(toks[2])
+		//id, err := kademlia.IDFromString(toks[2])
+		id, err := kademlia.IDFromString(toks[1])
 		if err != nil {
 			response = "ERR: Provided an invalid node ID(" + toks[1] + ")"
 			return
@@ -275,13 +280,15 @@ func executeLine(k *kademlia.Kademlia, line string) (response string) {
 		// perform an iterative store
 		//log.Printf("inside DoIterativeStore")
 
-		if len(toks) < 2 || len(toks) > 2 {
+		//if len(toks) < 2 || len(toks) > 2 {
+		if len(toks) != 3 {
 			response = "usage: iterativeStore [key] [value]"
 			return
 		}
 		key, err := kademlia.IDFromString(toks[1])
 		if err != nil {
-			response = "ERR: Provided an invalid key (" + toks[2] + ")"
+			//response = "ERR: Provided an invalid key (" + toks[2] + ")"
+			response = "ERR: Provided an invalid key (" + toks[1] + ")"
 			return
 		}
 		response = k.DoIterativeStore(key, []byte(toks[2]))
@@ -289,11 +296,13 @@ func executeLine(k *kademlia.Kademlia, line string) (response string) {
 	case toks[0] == "iterativeFindValue":
 		//fmt.Println("inside iterativeFindValue")
 		// performa an iterative find value
-		if len(toks) < 2 || len(toks) > 2 {
+		//if len(toks) < 2 || len(toks) > 2 {
+		if len(toks) != 2 {
 			response = "usage: iterativeFindValue [key]"
 			return
 		}
-		key, err := kademlia.IDFromString(toks[2])
+		//key, err := kademlia.IDFromString(toks[2])
+		key, err := kademlia.IDFromString(toks[1])
 		if err != nil {
 			response = "ERR: Provided an invalid key (" + toks[1] + ")"
 			return
