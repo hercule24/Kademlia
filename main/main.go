@@ -274,7 +274,9 @@ func executeLine(k *kademlia.Kademlia, line string) (response string) {
 			response = "ERR: Provided an invalid node ID(" + toks[1] + ")"
 			return
 		}
-		response = k.DoIterativeFindNode(id)
+		for _, v := range k.DoIterativeFindNode(id) {
+			response += v.NodeID.AsString() + "\n"
+		}
 
 	case toks[0] == "iterativeStore":
 		// perform an iterative store
