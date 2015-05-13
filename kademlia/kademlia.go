@@ -420,7 +420,7 @@ func (k *Kademlia) DoIterativeFindNode(id ID) []Contact {
 
 		if quit_flag {
 			var ret []Contact
-			for j := 0; j < 20; j++ {
+			for j := 0; j < len(*short_list); j++ {
 				c := heap.Pop(short_list).(*ContactWrapper).contact
 				ret = append(ret, c)
 			}
