@@ -363,7 +363,7 @@ func (k *Kademlia) DoIterativeFindNode(id ID) []Contact {
 	first_alpha := k.FindKClosest(id, k.NodeID, alpha)
 	closest_node = first_alpha[0]
 
-	close_dist := IDBits - closest_node.NodeID.Xor(id).PrefixLen()
+	//close_dist := IDBits - closest_node.NodeID.Xor(id).PrefixLen()
 
 	sync_chan := make(chan int)
 
@@ -562,7 +562,7 @@ func (k *Kademlia) sendFindValue(cw *ContactWrapper, key ID, sync_chan chan int)
 		closest_node := (*short_list)[0].contact
 		s_mutex.Unlock()
 		k.DoStore(&closest_node, key, res.Value)
-		fmt.Println("From node: " + k.NodeID.AsString() + ", found value: " + string(val))
+		fmt.Println("From node: " + k.NodeID.AsString() + ", found value: " + string(res.Value))
 		sync_chan <- 0
 		return
 	}
@@ -580,7 +580,7 @@ func (k *Kademlia) sendFindValue(cw *ContactWrapper, key ID, sync_chan chan int)
 		// add only non existent node
 		if !exist {
 
-			dist := IDBits - res.Nodes[i].NodeID.Xor(id).PrefixLen()
+			dist := IDBits - res.Nodes[i].NodeID.Xor(key).PrefixLen()
 
 			item := new(ContactWrapper)
 			item.contact = res.Nodes[i]
@@ -707,7 +707,7 @@ func (k *Kademlia) DoIterativeFindValue(key ID) string {
 						for i := 0; i < len(*short_list); i++ {
 							ret = append(ret, (*short_list)[i].contact)
 						}
-						return ret
+						return "Have not find value yet"
 					}
 				}
 			}
@@ -724,7 +724,7 @@ func (k *Kademlia) DoIterativeFindValue(key ID) string {
 					for i := 0; i < len(*short_list); i++ {
 						ret = append(ret, (*short_list)[i].contact)
 					}
-					return ret
+					return "Have not find value yet"
 				}
 
 			}
