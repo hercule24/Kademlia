@@ -295,7 +295,7 @@ func (k *Kademlia) LocalFindValue(searchKey ID) string {
 	}
 }
 
-func (k *Kademlia) sendFindNode(cw *ContactWrapper, id ID) {
+func (k *Kademlia) sendFindNode(cw *ContactWrapper, id ID, sync_chan chan int) {
 	contact := cw.contact
 	req := FindNodeRequest{k.SelfContact, NewRandomID(), id}
 	ipAddrStrings := contact.Host.String()
@@ -371,6 +371,8 @@ func (k *Kademlia) sendFindNode(cw *ContactWrapper, id ID) {
 		s_mutex.Unlock()
 	}
 
+	sync_chan <- 1
+
 }
 
 func (k *Kademlia) DoIterativeFindNode(id ID) []Contact {
@@ -378,6 +380,8 @@ func (k *Kademlia) DoIterativeFindNode(id ID) []Contact {
 	//log.Printf("inside the DoIterativeFindNode")
 	first_alpha := k.FindKClosest(id, k.NodeID, alpha)
 	closest_node = first_alpha[0]
+
+	sync_chan := make(chan int)
 
 	//wrapper_chan := make(Channel)
 
@@ -400,6 +404,11 @@ func (k *Kademlia) DoIterativeFindNode(id ID) []Contact {
 
 	heap.Init(short_list)
 
+	for i := 0; i < len(first_alpha); i++ {
+		fmt.Println((*short_list)[i].contact.NodeID.AsString())
+	}
+	fmt.Println("Before the for")
+
 	// stops when there are 20 active,
 	// or no contact returned are closer than currently
 	// exist in the short list.
@@ -408,28 +417,28 @@ func (k *Kademlia) DoIterativeFindNode(id ID) []Contact {
 		//var curr_alpha [alpha]*ContactWrapper
 		// sends alpha RPCs in one cycle
 		count := 0
-		s_mutex.Lock()
-		for i := 0; i < len(*short_list) && count < alpha; i++ {
-			if !(*short_list)[i].contacted {
-				go k.sendFindNode((*short_list)[i], id)
+		s_l := *short_list
+		for i := 0; i < len(s_l) && count < alpha; i++ {
+			if !s_l[i].contacted {
+				go k.sendFindNode(s_l[i], id, sync_chan)
 				count++
 			}
 		}
-		s_mutex.Unlock()
-
-		// because no top function provided
-		// so need to repush the nodes back in
-		//for i := 0; i < alpha; i++ {
-		//	if curr_alpha[i].active {
-		//		s_mutex.Lock()
-		//		heap.Push(short_list, curr_alpha[i])
-		//		s_mutex.Unlock()
-		//	}
-		//}
 
 		time.Sleep(300 * time.Millisecond)
 
-		s_mutex.Lock()
+		num_fin := 0
+
+		for {
+			select {
+			case v := <-sync_chan:
+				num_fin += v
+				if num_fin == 3 {
+					break
+				}
+			}
+		}
+
 		// remove those contacted but not active node
 		for i := 0; i < len(*short_list); i++ {
 			if (*short_list)[i].contacted && !(*short_list)[i].active {
@@ -437,18 +446,23 @@ func (k *Kademlia) DoIterativeFindNode(id ID) []Contact {
 			}
 		}
 
-		temp := heap.Pop(short_list).(*ContactWrapper).contact
+		for i := 0; i < len(first_alpha); i++ {
+			fmt.Println((*short_list)[i].contact.NodeID.AsString())
+		}
+		fmt.Println("Before the pop")
+
+		temp := (*short_list)[0]
 
 		// larger than prev_length means
 		// the short_list has been changed
-		if len(*short_list) > prev_length && temp.NodeID.Equals(closest_node.NodeID) {
+		if len(*short_list) > prev_length && temp.contact.NodeID.Equals(closest_node.NodeID) {
 			var ret []Contact
 			for i := 0; i < len(*short_list); i++ {
 				ret = append(ret, (*short_list)[i].contact)
 			}
 			return ret
 		} else {
-			closest_node = temp
+			closest_node = temp.contact
 		}
 
 		active_num := 0
@@ -468,7 +482,6 @@ func (k *Kademlia) DoIterativeFindNode(id ID) []Contact {
 		}
 
 		prev_length = len(*short_list)
-		s_mutex.Unlock()
 	}
 
 }
