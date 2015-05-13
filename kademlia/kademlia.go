@@ -373,7 +373,7 @@ func (k *Kademlia) sendFindNode(cw *ContactWrapper, id ID) {
 
 }
 
-func (k *Kademlia) DoIterativeFindNode(id ID) string {
+func (k *Kademlia) DoIterativeFindNode(id ID) []Contact {
 	// For project 2!
 	//log.Printf("inside the DoIterativeFindNode")
 	first_alpha := k.FindKClosest(id, k.NodeID, alpha)
@@ -442,7 +442,11 @@ func (k *Kademlia) DoIterativeFindNode(id ID) string {
 		// larger than prev_length means
 		// the short_list has been changed
 		if len(*short_list) > prev_length && temp.NodeID.Equals(closest_node.NodeID) {
-			return "OK"
+			var ret []Contact
+			for i := 0; i < len(*short_list); i++ {
+				ret = append(ret, (*short_list)[i].contact)
+			}
+			return ret
 		} else {
 			closest_node = temp
 		}
@@ -453,7 +457,11 @@ func (k *Kademlia) DoIterativeFindNode(id ID) string {
 				active_num++
 				if active_num == 20 {
 					// return value says K triples returned and converted to string
-					return "OK"
+					var ret []Contact
+					for i := 0; i < len(*short_list); i++ {
+						ret = append(ret, (*short_list)[i].contact)
+					}
+					return ret
 				}
 
 			}
