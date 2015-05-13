@@ -290,7 +290,6 @@ func (k *Kademlia) LocalFindValue(searchKey ID) string {
 	if ok == false {
 		return "ERR: can't find value locally"
 	} else {
-		// shall we include the valude this way?
 		return "OK: " + string(value)
 	}
 }
@@ -307,7 +306,6 @@ func (k *Kademlia) sendFindNode(cw *ContactWrapper, id ID, sync_chan chan int) {
 	cw.contacted = true
 
 	if err != nil {
-		// should we return here
 		cw.active = false
 		return
 	}
@@ -329,7 +327,6 @@ func (k *Kademlia) sendFindNode(cw *ContactWrapper, id ID, sync_chan chan int) {
 
 	for i := 0; i < len(res.Nodes); i++ {
 		s_mutex.Lock()
-
 		exist := false
 		for j := 0; j < len(*short_list); j++ {
 			if res.Nodes[i].NodeID.Equals((*short_list)[j].contact.NodeID) {
@@ -359,17 +356,11 @@ func (k *Kademlia) sendFindNode(cw *ContactWrapper, id ID, sync_chan chan int) {
 
 func (k *Kademlia) DoIterativeFindNode(id ID) []Contact {
 	// For project 2!
-	//log.Printf("inside the DoIterativeFindNode")
 	first_alpha := k.FindKClosest(id, k.NodeID, alpha)
 	closest_node = first_alpha[0]
 
-	//close_dist := IDBits - closest_node.NodeID.Xor(id).PrefixLen()
-
 	sync_chan := make(chan int)
 
-	//wrapper_chan := make(Channel)
-
-	//var short_list ContactHeap
 	short_list = new(ContactHeap)
 
 	for i := 0; i < len(first_alpha); i++ {
@@ -384,68 +375,38 @@ func (k *Kademlia) DoIterativeFindNode(id ID) []Contact {
 		*short_list = append(*short_list, item)
 	}
 
-	prev_length := len(*short_list)
-
 	heap.Init(short_list)
-	//fmt.Printf("cur root = %s\n", (*short_list)[0].contact.NodeID.AsString())
-	//root_dist := (*short_list)[0].dist
-	//fmt.Printf("and its dist = %d\n", root_dist)
-
-	//fmt.Printf("cur closest_node = %s\n", closest_node.NodeID.AsString())
-	//fmt.Printf("and its dist = %d\n", close_dist)
-
-	//for i := 0; i < len(first_alpha); i++ {
-	//fmt.Println((*short_list)[i].contact.NodeID.AsString())
-	//}
-	//fmt.Println("Before the for")
-
 	// stops when there are 20 active,
 	// or no contact returned are closer than currently
 	// exist in the short list.
 
 	for {
-		//var curr_alpha [alpha]*ContactWrapper
 		// sends alpha RPCs in one cycle
 		count := 0
 		s_l := *short_list
 
-		quit_flag := true
 		for i := 0; i < len(s_l) && count < alpha; i++ {
-			if !s_l[i].contacted {
-				quit_flag = false
+			if !(s_l)[i].contacted {
 				go k.sendFindNode(s_l[i], id, sync_chan)
 				count++
 			}
-		}
-
-		if quit_flag {
-			var ret []Contact
-			for j := 0; j < len(*short_list); j++ {
-				c := heap.Pop(short_list).(*ContactWrapper).contact
-				ret = append(ret, c)
-			}
-			return ret
 		}
 
 		time.Sleep(300 * time.Millisecond)
 
 		num_fin := 0
 
-		//fmt.Println("Before the Channel")
-
 		for {
-			select {
-			case v := <-sync_chan:
-				num_fin += v
-				//fmt.Printf("num_fin = %d\n", num_fin)
-			}
 			if num_fin == count {
 				break
 			}
+			select {
+			case v := <-sync_chan:
+				num_fin += v
+				//		fmt.Printf("num_fin = %d\n", num_fin)
+			}
 
 		}
-
-		//fmt.Println("Before the remove")
 
 		// remove those contacted but not active node
 		for i := 0; i < len(*short_list); i++ {
@@ -454,66 +415,63 @@ func (k *Kademlia) DoIterativeFindNode(id ID) []Contact {
 			}
 		}
 
-		//for i := 0; i < len(*short_list); i++ {
-		//	fmt.Println((*short_list)[i].contact.NodeID.AsString())
-		//}
-		//fmt.Println("Before the pop")
-
 		temp := (*short_list)[0]
-		//fmt.Printf("cur temp = %s\n", temp.contact.NodeID.AsString())
-		//fmt.Printf("cur closest_node = %s\n", closest_node.NodeID.AsString())
-
-		// larger than prev_length means
-		// the short_list has been changed
-		// TODO
-		if len(*short_list) > prev_length && temp.contact.NodeID.Equals(closest_node.NodeID) {
-			//fmt.Println("inside the unchanged return")
+		if temp.contact.NodeID.Equals(closest_node.NodeID) {
 			active_num := 0
+			var ret []Contact
+			for i := 0; i < len(*short_list); i++ {
+				if !(*short_list)[i].contacted {
+					ipAddrStrings := (*short_list)[i].contact.Host.String()
+					port := strconv.Itoa(int((*short_list)[i].contact.Port))
+
+					sock_addr := ipAddrStrings + ":" + port
+					_, err := rpc.DialHTTP("tcp", sock_addr)
+					if err != nil {
+						(*short_list)[i].active = false
+					} else {
+						active_num++
+						if active_num <= 20 {
+							ret = append(ret, (*short_list)[i].contact)
+						} else {
+							break
+						}
+					}
+				} else {
+					active_num++
+					if active_num <= 20 {
+						ret = append(ret, (*short_list)[i].contact)
+					} else {
+						break
+					}
+
+				}
+			}
+			return ret
+		} else {
+			closest_node = temp.contact
+			active_num := 0
+			var ret []Contact
 			for i := 0; i < len(*short_list); i++ {
 				if (*short_list)[i].active {
 					active_num++
 
-					if active_num == 20 {
-						var ret []Contact
-						for j := 0; j < 20; j++ {
-							c := heap.Pop(short_list).(*ContactWrapper).contact
-							ret = append(ret, c)
-						}
-						return ret
-
+					if active_num <= 20 {
+						ret = append(ret, (*short_list)[i].contact)
+					} else {
+						break
 					}
 				}
 			}
-		} else {
-			closest_node = temp.contact
-		}
-
-		// TODO
-		active_num := 0
-		for i := 0; i < len(*short_list); i++ {
-			if (*short_list)[i].active {
-				active_num++
-
-				if active_num == 20 {
-					var ret []Contact
-					for j := 0; j < 20; j++ {
-						c := heap.Pop(short_list).(*ContactWrapper).contact
-						ret = append(ret, c)
-					}
-					return ret
-				}
-
+			if active_num == 20 {
+				return ret
 			}
 		}
 
-		prev_length = len(*short_list)
 	}
-
 }
 
 func (k *Kademlia) DoIterativeStore(key ID, value []byte) string {
 	// For project 2!
-	//log.Printf("inside the DoIterativeStore")
 	closeNodes := k.DoIterativeFindNode(key)
 	for _, node := range closeNodes {
 		k.DoStore(&node, key, value)
@@ -523,7 +481,7 @@ func (k *Kademlia) DoIterativeStore(key ID, value []byte) string {
 	return lastID.AsString()
 }
 
-func (k *Kademlia) sendFindValue(cw *ContactWrapper, key ID, sync_chan chan int) {
+func (k *Kademlia) sendFindValue(cw *ContactWrapper, key ID, sync_chan chan int, flag_chan chan Contact, val_chan chan []byte) {
 	contact := cw.contact
 	req := FindValueRequest{k.SelfContact, NewRandomID(), key}
 	ipAddrStrings := contact.Host.String()
@@ -535,7 +493,6 @@ func (k *Kademlia) sendFindValue(cw *ContactWrapper, key ID, sync_chan chan int)
 	cw.contacted = true
 
 	if err != nil {
-		// should we return here
 		cw.active = false
 		return
 	}
@@ -549,8 +506,6 @@ func (k *Kademlia) sendFindValue(cw *ContactWrapper, key ID, sync_chan chan int)
 		return
 	}
 
-	//if res.
-
 	cw.active = true
 
 	k_mutex.Lock()
@@ -558,12 +513,12 @@ func (k *Kademlia) sendFindValue(cw *ContactWrapper, key ID, sync_chan chan int)
 	k_mutex.Unlock()
 
 	if res.Value != nil {
+		flag_chan <- contact
+		val_chan <- res.Value
 		s_mutex.Lock()
 		closest_node := (*short_list)[0].contact
 		s_mutex.Unlock()
 		k.DoStore(&closest_node, key, res.Value)
-		fmt.Println("From node: " + k.NodeID.AsString() + ", found value: " + string(res.Value))
-		sync_chan <- 0
 		return
 	}
 
@@ -599,26 +554,22 @@ func (k *Kademlia) sendFindValue(cw *ContactWrapper, key ID, sync_chan chan int)
 
 func (k *Kademlia) DoIterativeFindValue(key ID) string {
 	// For project 2!
-	//log.Printf("inside the DoFindValue")
 	first_alpha := k.FindKClosest(key, k.NodeID, alpha)
 	closest_node = first_alpha[0]
-
+	//find value locally
 	val, ok := k.value_map[key]
 	if ok {
+		//if find value locally, store the val at the closest_node
 		k.DoStore(&closest_node, key, val)
 		fmt.Println("From node: " + k.NodeID.AsString() + ", found value: " + string(val))
 		return ""
 	}
 
-	//close_dist := IDBits - closest_node.NodeID.Xor(id).PrefixLen()
-
 	sync_chan := make(chan int)
-
-	//wrapper_chan := make(Channel)
-
-	//var short_list ContactHeap
+	//if flag_chan is not empty, then we find the value
+	flag_chan := make(chan Contact)
+	val_chan := make(chan []byte)
 	short_list = new(ContactHeap)
-
 	for i := 0; i < len(first_alpha); i++ {
 		dist := IDBits - first_alpha[i].NodeID.Xor(key).PrefixLen()
 
@@ -631,52 +582,43 @@ func (k *Kademlia) DoIterativeFindValue(key ID) string {
 		*short_list = append(*short_list, item)
 	}
 
-	prev_length := len(*short_list)
-
 	heap.Init(short_list)
 
 	for {
-		//var curr_alpha [alpha]*ContactWrapper
 		// sends alpha RPCs in one cycle
 		count := 0
 		s_l := *short_list
 
-		quit_flag := true
 		for i := 0; i < len(s_l) && count < alpha; i++ {
 			if !s_l[i].contacted {
-				quit_flag = false
-				go k.sendFindValue(s_l[i], key, sync_chan)
+				go k.sendFindValue(s_l[i], key, sync_chan, flag_chan, val_chan)
 				count++
 			}
 		}
-
-		if quit_flag {
-			fmt.Println("ERR")
-			return ""
+		//if there is no un-contacted node to look for, return ERR
+		if count == 0 {
+			return "ERR"
 		}
 
 		time.Sleep(300 * time.Millisecond)
-
 		num_fin := 0
-
-		//fmt.Println("Before the Channel")
-
 		for {
 			select {
-			case v := <-sync_chan:
-				if v == 0 {
-					return ""
+			case c := <-flag_chan:
+				fmt.Println("From node: " + c.NodeID.AsString() + ", found value: " + string(<-val_chan))
+				return ""
+			default:
+				select {
+				case v := <-sync_chan:
+					num_fin += v
 				}
-				num_fin += v
-				//fmt.Printf("num_fin = %d\n", num_fin)
 			}
+
 			if num_fin == count {
 				break
 			}
 
 		}
-
-		//fmt.Println("Before the remove")
 
 		// remove those contacted but not active node
 		for i := 0; i < len(*short_list); i++ {
@@ -685,52 +627,56 @@ func (k *Kademlia) DoIterativeFindValue(key ID) string {
 			}
 		}
 
-		//for i := 0; i < len(*short_list); i++ {
-		//	fmt.Println((*short_list)[i].contact.NodeID.AsString())
-		//}
-		//fmt.Println("Before the pop")
-
 		temp := (*short_list)[0]
-		//fmt.Printf("cur temp = %s\n", temp.contact.NodeID.AsString())
-		//fmt.Printf("cur closest_node = %s\n", closest_node.NodeID.AsString())
-
-		// larger than prev_length means
-		// the short_list has been changed
-		if len(*short_list) > prev_length && temp.contact.NodeID.Equals(closest_node.NodeID) {
-			//fmt.Println("inside the unchanged return")
+		if temp.contact.NodeID.Equals(closest_node.NodeID) {
 			active_num := 0
+			var ret []Contact
+			for i := 0; i < len(*short_list); i++ {
+				if !(*short_list)[i].contacted {
+					ipAddrStrings := (*short_list)[i].contact.Host.String()
+					port := strconv.Itoa(int((*short_list)[i].contact.Port))
+
+					sock_addr := ipAddrStrings + ":" + port
+					_, err := rpc.DialHTTP("tcp", sock_addr)
+					if err != nil {
+						(*short_list)[i].active = false
+					} else {
+						active_num++
+						if active_num <= 20 {
+							ret = append(ret, (*short_list)[i].contact)
+						} else {
+							break
+						}
+					}
+				} else {
+					active_num++
+					if active_num <= 20 {
+						ret = append(ret, (*short_list)[i].contact)
+					} else {
+						break
+					}
+
+				}
+			}
+			return "ERR"
+		} else {
+			closest_node = temp.contact
+			active_num := 0
+			var ret []Contact
 			for i := 0; i < len(*short_list); i++ {
 				if (*short_list)[i].active {
 					active_num++
-					if active_num == 20 {
-						var ret []Contact
-						for i := 0; i < len(*short_list); i++ {
-							ret = append(ret, (*short_list)[i].contact)
-						}
-						return "Have not find value yet"
-					}
-				}
-			}
-		} else {
-			closest_node = temp.contact
-		}
 
-		active_num := 0
-		for i := 0; i < len(*short_list); i++ {
-			if (*short_list)[i].active {
-				active_num++
-				if active_num == 20 {
-					var ret []Contact
-					for i := 0; i < len(*short_list); i++ {
+					if active_num <= 20 {
 						ret = append(ret, (*short_list)[i].contact)
+					} else {
+						break
 					}
-					return "Have not find value yet"
 				}
-
+			}
+			if active_num == 20 {
+				return "ERR"
 			}
 		}
-
-		prev_length = len(*short_list)
 	}
-
 }
