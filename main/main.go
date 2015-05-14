@@ -44,7 +44,9 @@ func main() {
 
 	//fmt.Println("before the dial")
 
-	client, err := rpc.DialHTTP("tcp", firstPeerStr)
+	_, port, _ := net.SplitHostPort(firstPeerStr)
+	client, err := rpc.DialHTTPPath("tcp", firstPeerStr, rpc.DefaultRPCPath+port)
+	//client, err := rpc.DialHTTP("tcp", firstPeerStr)
 	if err != nil {
 		log.Fatal("DialHTTP: ", err)
 	}

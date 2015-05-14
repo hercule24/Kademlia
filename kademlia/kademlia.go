@@ -93,8 +93,12 @@ func NewKademlia(laddr string) *Kademlia {
 	// Set up RPC server
 	// NOTE: KademliaCore is just a wrapper around Kademlia. This type includes
 	// the RPC functions.
-	rpc.Register(&KademliaCore{k})
-	rpc.HandleHTTP()
+	s := rpc.NewServer()
+	s.Register(&KademliaCore{k})
+	_, port, _ := net.SplitHostPort(laddr)
+	s.HandleHTTP(rpc.DefaultRPCPath+port, rpc.DefaultDebugPath+port)
+	//rpc.Register(&KademliaCore{k})
+	//rpc.HandleHTTP()
 	l, err := net.Listen("tcp", laddr)
 	if err != nil {
 		log.Fatal("Listen: ", err)
@@ -159,9 +163,11 @@ func (k *Kademlia) FindContact(nodeId ID) (*Contact, error) {
 func (k *Kademlia) DoPing(host net.IP, port uint16) string {
 	// If all goes well, return "OK: <output>", otherwise print "ERR: <messsage>"
 	//MsgID := NewRandomID
-	ipAddrStrings := host.String()
-	sock_addr := ipAddrStrings + ":" + strconv.Itoa(int(port))
-	client, err := rpc.DialHTTP("tcp", sock_addr)
+	port_str := strconv.Itoa(int(port))
+	client, err := rpc.DialHTTPPath("tcp", host.String()+":"+port_str, rpc.DefaultRPCPath+port_str)
+	//ipAddrStrings := host.String()
+	//sock_addr := ipAddrStrings + ":" + strconv.Itoa(int(port))
+	//client, err := rpc.DialHTTP("tcp", sock_addr)
 
 	if err != nil {
 		return "ERR: can't reach the server"
@@ -186,11 +192,13 @@ func (k *Kademlia) DoStore(contact *Contact, key ID, value []byte) string {
 	// If all goes well, return "OK: <output>", otherwise print "ERR: <messsage>"
 	req := StoreRequest{k.SelfContact, NewRandomID(), key, value}
 
-	ipAddrStrings := contact.Host.String()
-	port := strconv.Itoa(int(contact.Port))
+	//	ipAddrStrings := contact.Host.String()
+	//	port := strconv.Itoa(int(contact.Port))
 
-	sock_addr := ipAddrStrings + ":" + port
-	client, err := rpc.DialHTTP("tcp", sock_addr)
+	//	sock_addr := ipAddrStrings + ":" + port
+	//	client, err := rpc.DialHTTP("tcp", sock_addr)
+	port_str := strconv.Itoa(int(contact.Port))
+	client, err := rpc.DialHTTPPath("tcp", contact.Host.String()+":"+port_str, rpc.DefaultRPCPath+port_str)
 
 	if err != nil {
 		return "ERR: can't reach the server"
@@ -214,12 +222,14 @@ func (k *Kademlia) DoStore(contact *Contact, key ID, value []byte) string {
 func (k *Kademlia) DoFindNode(contact *Contact, searchKey ID) string {
 	// If all goes well, return "OK: <output>", otherwise print "ERR: <messsage>"
 	req := FindNodeRequest{k.SelfContact, NewRandomID(), searchKey}
-	ipAddrStrings := contact.Host.String()
-	port := strconv.Itoa(int(contact.Port))
+	//ipAddrStrings := contact.Host.String()
+	//port := strconv.Itoa(int(contact.Port))
 
-	sock_addr := ipAddrStrings + ":" + port
-	client, err := rpc.DialHTTP("tcp", sock_addr)
+	//sock_addr := ipAddrStrings + ":" + port
+	//client, err := rpc.DialHTTP("tcp", sock_addr)
 
+	port_str := strconv.Itoa(int(contact.Port))
+	client, err := rpc.DialHTTPPath("tcp", contact.Host.String()+":"+port_str, rpc.DefaultRPCPath+port_str)
 	if err != nil {
 		return "ERR: can't reach the server"
 	}
@@ -235,23 +245,25 @@ func (k *Kademlia) DoFindNode(contact *Contact, searchKey ID) string {
 	k_mutex.Lock()
 	k.Update(contact)
 	k_mutex.Unlock()
-
+	s := ""
 	for _, v := range res.Nodes {
-		fmt.Printf("Node ID: %s\n", v.NodeID.AsString())
+		s += v.NodeID.AsString()
 	}
 
-	return "OK: FindNode success!"
+	return "OK: FindNode success!" + s
 }
 
 func (k *Kademlia) DoFindValue(contact *Contact, searchKey ID) string {
 	// If all goes well, return "OK: <output>", otherwise print "ERR: <messsage>"
 	req := FindValueRequest{k.SelfContact, NewRandomID(), searchKey}
-	ipAddrStrings := contact.Host.String()
-	port := strconv.Itoa(int(contact.Port))
+	//ipAddrStrings := contact.Host.String()
+	//port := strconv.Itoa(int(contact.Port))
 
-	sock_addr := ipAddrStrings + ":" + port
-	client, err := rpc.DialHTTP("tcp", sock_addr)
+	//sock_addr := ipAddrStrings + ":" + port
+	//client, err := rpc.DialHTTP("tcp", sock_addr)
 
+	port_str := strconv.Itoa(int(contact.Port))
+	client, err := rpc.DialHTTPPath("tcp", contact.Host.String()+":"+port_str, rpc.DefaultRPCPath+port_str)
 	if err != nil {
 		return "ERR: can't reach the server"
 	}
@@ -260,7 +272,7 @@ func (k *Kademlia) DoFindValue(contact *Contact, searchKey ID) string {
 
 	err = client.Call("KademliaCore.FindValue", req, res)
 	if err != nil {
-		return "can't do find value"
+		return "ERR: can't do find value"
 	}
 
 	k_mutex.Lock()
@@ -269,15 +281,16 @@ func (k *Kademlia) DoFindValue(contact *Contact, searchKey ID) string {
 
 	if res.Value != nil {
 		//fmt.Printf("%v\n", string(res.Value))
-		fmt.Printf("From node: %s, found value: %s\n", contact.NodeID.AsString(), string(res.Value))
-		return "OK: Value found"
+		//fmt.Printf("From node: %s, found value: %s\n", contact.NodeID.AsString(), string(res.Value))
+		return "OK: Value found" + string(res.Value)
 	} else {
+		s := ""
 		for _, v := range res.Nodes {
 			//fmt.Printf("length of res.Nodes = %d", len(res.Nodes))
-			fmt.Printf("Node ID: %s\n", v.NodeID.AsString())
+			s += v.NodeID.AsString()
 		}
 
-		return "ERR: Value not found"
+		return "OK: Nodes returned." + s
 	}
 
 }
@@ -295,14 +308,17 @@ func (k *Kademlia) LocalFindValue(searchKey ID) string {
 }
 
 func (k *Kademlia) sendFindNode(cw *ContactWrapper, id ID, sync_chan chan int) {
+	//senf FindNode RPCs
 	contact := cw.contact
 	req := FindNodeRequest{k.SelfContact, NewRandomID(), id}
-	ipAddrStrings := contact.Host.String()
-	port := strconv.Itoa(int(contact.Port))
+	//ipAddrStrings := contact.Host.String()
+	//port := strconv.Itoa(int(contact.Port))
 
-	sock_addr := ipAddrStrings + ":" + port
-	client, err := rpc.DialHTTP("tcp", sock_addr)
+	//sock_addr := ipAddrStrings + ":" + port
+	//client, err := rpc.DialHTTP("tcp", sock_addr)
 
+	port_str := strconv.Itoa(int(contact.Port))
+	client, err := rpc.DialHTTPPath("tcp", contact.Host.String()+":"+port_str, rpc.DefaultRPCPath+port_str)
 	cw.contacted = true
 
 	if err != nil {
@@ -355,7 +371,7 @@ func (k *Kademlia) sendFindNode(cw *ContactWrapper, id ID, sync_chan chan int) {
 }
 
 func (k *Kademlia) DoIterativeFindNode(id ID) []Contact {
-	// For project 2!
+	// Return k triples of contacts closest to the id
 	first_alpha := k.FindKClosest(id, k.NodeID, alpha)
 	closest_node = first_alpha[0]
 
@@ -403,7 +419,6 @@ func (k *Kademlia) DoIterativeFindNode(id ID) []Contact {
 			select {
 			case v := <-sync_chan:
 				num_fin += v
-				//		fmt.Printf("num_fin = %d\n", num_fin)
 			}
 
 		}
@@ -421,14 +436,19 @@ func (k *Kademlia) DoIterativeFindNode(id ID) []Contact {
 			var ret []Contact
 			for i := 0; i < len(*short_list); i++ {
 				if !(*short_list)[i].contacted {
-					ipAddrStrings := (*short_list)[i].contact.Host.String()
-					port := strconv.Itoa(int((*short_list)[i].contact.Port))
+					//				ipAddrStrings := (*short_list)[i].contact.Host.String()
+					//				port := strconv.Itoa(int((*short_list)[i].contact.Port))
+					port_str := strconv.Itoa(int((*short_list)[i].contact.Port))
+					_, err := rpc.DialHTTPPath("tcp", (*short_list)[i].contact.Host.String()+":"+port_str, rpc.DefaultRPCPath+port_str)
 
-					sock_addr := ipAddrStrings + ":" + port
-					_, err := rpc.DialHTTP("tcp", sock_addr)
+					//				sock_addr := ipAddrStrings + ":" + port
+					//				_, err := rpc.DialHTTP("tcp", sock_addr)
 					if err != nil {
 						(*short_list)[i].active = false
 					} else {
+						k_mutex.Lock()
+						k.Update(&(*short_list)[i].contact)
+						k_mutex.Unlock()
 						active_num++
 						if active_num <= 20 {
 							ret = append(ret, (*short_list)[i].contact)
@@ -471,7 +491,7 @@ func (k *Kademlia) DoIterativeFindNode(id ID) []Contact {
 }
 
 func (k *Kademlia) DoIterativeStore(key ID, value []byte) string {
-	// For project 2!
+	// Store key-value pairs in nodes returned from iterativeFindNode
 	closeNodes := k.DoIterativeFindNode(key)
 	for _, node := range closeNodes {
 		k.DoStore(&node, key, value)
@@ -484,12 +504,14 @@ func (k *Kademlia) DoIterativeStore(key ID, value []byte) string {
 func (k *Kademlia) sendFindValue(cw *ContactWrapper, key ID, sync_chan chan int, flag_chan chan Contact, val_chan chan []byte) {
 	contact := cw.contact
 	req := FindValueRequest{k.SelfContact, NewRandomID(), key}
-	ipAddrStrings := contact.Host.String()
-	port := strconv.Itoa(int(contact.Port))
+	//ipAddrStrings := contact.Host.String()
+	//port := strconv.Itoa(int(contact.Port))
 
-	sock_addr := ipAddrStrings + ":" + port
-	client, err := rpc.DialHTTP("tcp", sock_addr)
+	//sock_addr := ipAddrStrings + ":" + port
+	//client, err := rpc.DialHTTP("tcp", sock_addr)
 
+	port_str := strconv.Itoa(int(contact.Port))
+	client, err := rpc.DialHTTPPath("tcp", contact.Host.String()+":"+port_str, rpc.DefaultRPCPath+port_str)
 	cw.contacted = true
 
 	if err != nil {
@@ -515,8 +537,11 @@ func (k *Kademlia) sendFindValue(cw *ContactWrapper, key ID, sync_chan chan int,
 	if res.Value != nil {
 		flag_chan <- contact
 		val_chan <- res.Value
-		s_mutex.Lock()
 		closest_node := (*short_list)[0].contact
+		s_mutex.Lock()
+		if closest_node.NodeID == contact.NodeID {
+			closest_node = (*short_list)[1].contact
+		}
 		s_mutex.Unlock()
 		k.DoStore(&closest_node, key, res.Value)
 		return
@@ -553,7 +578,7 @@ func (k *Kademlia) sendFindValue(cw *ContactWrapper, key ID, sync_chan chan int,
 }
 
 func (k *Kademlia) DoIterativeFindValue(key ID) string {
-	// For project 2!
+	// Return value if the key is found
 	first_alpha := k.FindKClosest(key, k.NodeID, alpha)
 	closest_node = first_alpha[0]
 	//find value locally
@@ -561,8 +586,8 @@ func (k *Kademlia) DoIterativeFindValue(key ID) string {
 	if ok {
 		//if find value locally, store the val at the closest_node
 		k.DoStore(&closest_node, key, val)
-		fmt.Println("From node: " + k.NodeID.AsString() + ", found value: " + string(val))
-		return ""
+		s := "From node: " + k.NodeID.AsString() + ", found value: " + string(val)
+		return s
 	}
 
 	sync_chan := make(chan int)
@@ -605,8 +630,8 @@ func (k *Kademlia) DoIterativeFindValue(key ID) string {
 		for {
 			select {
 			case c := <-flag_chan:
-				fmt.Println("From node: " + c.NodeID.AsString() + ", found value: " + string(<-val_chan))
-				return ""
+				s := "From node: " + c.NodeID.AsString() + ", found value: " + string(<-val_chan)
+				return s
 			default:
 				select {
 				case v := <-sync_chan:
@@ -633,14 +658,19 @@ func (k *Kademlia) DoIterativeFindValue(key ID) string {
 			var ret []Contact
 			for i := 0; i < len(*short_list); i++ {
 				if !(*short_list)[i].contacted {
-					ipAddrStrings := (*short_list)[i].contact.Host.String()
-					port := strconv.Itoa(int((*short_list)[i].contact.Port))
+					//ipAddrStrings := (*short_list)[i].contact.Host.String()
+					//port := strconv.Itoa(int((*short_list)[i].contact.Port))
 
-					sock_addr := ipAddrStrings + ":" + port
-					_, err := rpc.DialHTTP("tcp", sock_addr)
+					port_str := strconv.Itoa(int((*short_list)[i].contact.Port))
+					_, err := rpc.DialHTTPPath("tcp", (*short_list)[i].contact.Host.String()+":"+port_str, rpc.DefaultRPCPath+port_str)
+					//sock_addr := ipAddrStrings + ":" + port
+					//_, err := rpc.DialHTTP("tcp", sock_addr)
 					if err != nil {
 						(*short_list)[i].active = false
 					} else {
+						k_mutex.Lock()
+						k.Update(&(*short_list)[i].contact)
+						k_mutex.Unlock()
 						active_num++
 						if active_num <= 20 {
 							ret = append(ret, (*short_list)[i].contact)
