@@ -109,6 +109,9 @@ func executeLine(k *kademlia.Kademlia, line string) (response string) {
 			return
 		}
 		response = k.NodeID.AsString()
+	case toks[0] == "vanish":
+
+	case toks[0] == "unvanish":
 
 	case toks[0] == "print_contact":
 		if len(toks) < 2 || len(toks) > 2 {
