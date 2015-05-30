@@ -125,6 +125,9 @@ func UnvanishData(kadem Kademlia, vdo VanashingDataObject) (data []byte) {
 			break
 		}
 	}
+	if count < int(T) {
+		return []byte("Can't obtain enough shares to recover K")
+	}
 	//obtain the original K
 	K := sss.Combine(shares)
 	data = decrypt(K, C)
