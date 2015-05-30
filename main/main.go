@@ -19,6 +19,12 @@ import (
 	"kademlia"
 )
 
+//for locking vdo_map
+//var vdo_mutex = &sync.Mutex{}
+
+//for locking kademlia
+//var k_mutex = &sync.Mutex{}
+
 func main() {
 	// By default, Go seeds its RNG with 1. This would cause every program to
 	// generate the same sequence of IDs. Use the current nano time to
@@ -51,11 +57,10 @@ func main() {
 		log.Fatal("DialHTTP: ", err)
 	}
 
-	// why doesn't include the sender
-	// why a ping pointer
+	
 	ping := new(kademlia.PingMessage)
 
-	// added by me
+	
 	ping.Sender = kadem.SelfContact
 
 	ping.MsgID = kademlia.NewRandomID()
@@ -71,9 +76,6 @@ func main() {
 	if err != nil {
 		log.Fatal("Call: ", err)
 	}
-
-	// added by me
-	//fmt.Println("before the ping msg, pong msg")
 
 	log.Printf("ping msgID: %s\n", ping.MsgID.AsString())
 	log.Printf("pong msgID: %s\n", pong.MsgID.AsString())
@@ -109,9 +111,6 @@ func executeLine(k *kademlia.Kademlia, line string) (response string) {
 			return
 		}
 		response = k.NodeID.AsString()
-	case toks[0] == "vanish":
-
-	case toks[0] == "unvanish":
 
 	case toks[0] == "print_contact":
 		if len(toks) < 2 || len(toks) > 2 {
@@ -318,6 +317,51 @@ func executeLine(k *kademlia.Kademlia, line string) (response string) {
 			return
 		}
 		response = k.DoIterativeFindValue(key)
+
+	case toks[0] == "vanish":
+		if len(toks) != 5 {
+			response = "usage: vanish [VDO ID] [data] [numberKeys] [threshold]"
+			return
+		}
+		VdoID, err := kademlia.IDFromString(toks[1])
+		if err != nil {
+			response = "ERR: Provided an invalid VdoID (" + toks[1] + ")"
+			return
+		}
+		N, err := strconv.Atoi(toks[3])
+		if err != nil {
+			response = "ERR: Provided an invalid N (" + toks[3] + ")"
+			return
+		}
+		T, err := strconv.Atoi(toks[4])
+		if err != nil {
+			response = "ERR: Provided an invalid T (" + toks[4] + ")"
+			return
+		}
+		vdo := kademlia.VanishData(*k, []byte(toks[2]), byte(N), byte(T))
+
+		//store VDO locally
+		response = k.StoreVDO(VdoID, vdo)
+		
+
+	case toks[0] == "unvanish":
+		if len(toks) != 3 {
+			response = "usage: unvanish [Node ID] [VDO ID]"
+			return
+		}
+		NodeID, err := kademlia.IDFromString(toks[1])
+		if err != nil {
+			response = "ERR: Provided an invalid Node ID (" + toks[1] + ")"
+			return
+		}
+		VdoID, err := kademlia.IDFromString(toks[2])
+		if err != nil {
+			response = "ERR: Provided an invalid VDO ID (" + toks[2] + ")"
+			return
+		}
+		response = k.DoGETVDO(NodeID, VdoID)
+		
+
 	default:
 		response = "ERR: Unknown command"
 	}

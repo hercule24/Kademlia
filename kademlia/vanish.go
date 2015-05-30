@@ -7,6 +7,7 @@ import (
 	"io"
 	mathrand "math/rand"
 	"sss"
+	"strings"
 	"time"
 )
 
@@ -72,31 +73,61 @@ func decrypt(key []byte, ciphertext []byte) (text []byte) {
 	return ciphertext
 }
 
-func VanishData(kadem Kademlia, data []byte, numberKeys byte,
-	threshold byte) (vdo VanashingDataObject) {
-	crypto_key := GenerateRandomCryptoKey()
-	ciphertext := encrypt(crypto_key, data)
-	shares := sss.Split(numberKeys, threshold, crypto_key)
-
-	accessKey := GenerateRandomAccessKey()
-	ids := CalculateSharedKeyLocations(accessKey, numberKeys)
-
-	for i := byte(0); i < len(ids); i++ {
-		c := kadem.FindContact(ids[i])
-		// maybe buggy here due to index
-		// what if the id doesn't exist
-		all := make([]byte)
-		all = append(all, i+1)
-		all = append(all, shares[i+1])
-		kadem.DoStore(c, NewRandomID(), all)
+func VanishData(kadem Kademlia, data []byte, numberKeys byte, threshold byte) (vdo VanashingDataObject) {
+	K := GenerateRandomCryptoKey()
+	C := encrypt(K, data)
+	shares, err := sss.Split(numberKeys, threshold, K)
+	if err != nil {
+		panic(err)
 	}
-
-	vdo := VanishData{accessKey, ciphertext, numberKeys, threshold}
+	L := GenerateRandomAccessKey()
+	ids := CalculateSharedKeyLocations(L, int64(numberKeys))
+	//store N shares to the closest ids
+	for x := 0; x < int(numberKeys); x++ {
+		key := byte(x + 1)
+		//append the key at last
+		all := append(shares[key], key)
+		(&kadem).DoIterativeStore(ids[x], all)
+	}
+	vdo = VanashingDataObject{L, C, numberKeys, threshold}
 	return vdo
 }
 
 func UnvanishData(kadem Kademlia, vdo VanashingDataObject) (data []byte) {
-	ids := CalculateSharedKeyLocations(vdo.AccessKey, vdo.NumberKeys)
-	// if we are to DoFindValue, where is the searchKey
-	return
+	L := vdo.AccessKey
+	C := vdo.Ciphertext
+	N := vdo.NumberKeys
+	T := vdo.Threshold
+	ids := CalculateSharedKeyLocations(L, int64(N))
+	// number of shares found
+	count := 0
+	shares := make(map[byte][]byte, T)
+	//find at least T shares to restore the decrypt Key
+	for x := 0; x < int(N); x++ {
+		//str is "ERR" if value is not found, else value is after "found value: " in str
+		str := (&kadem).DoIterativeFindValue(ids[x])
+		if str == "ERR" {
+			continue
+		}
+		//get the value out of str
+		index := strings.LastIndex(str, "found value: ")
+		index = index + 13
+		str = str[index:]
+		all := []byte(str)
+		k := all[len(all)-1]
+		v := all[0 : len(all)-1]
+		//store the key-value pair in shares
+		shares[k] = v
+		//increment the count
+		count++
+		//stop when at least T shares have been found
+		if count >= int(T) {
+			break
+		}
+	}
+	//obtain the original K
+	K := sss.Combine(shares)
+	data = decrypt(K, C)
+
+	return data
 }

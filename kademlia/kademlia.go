@@ -43,6 +43,9 @@ var k_mutex = &sync.Mutex{}
 // for locking value_map
 var v_mutex = &sync.Mutex{}
 
+// for locking vdo_map
+var vdo_mutex = &sync.Mutex{}
+
 // for locking short_list
 var s_mutex = &sync.Mutex{}
 
@@ -82,6 +85,7 @@ type Kademlia struct {
 	SelfContact Contact
 	table       *RoutingTable
 	value_map   map[ID][]byte
+	vdo_map     map[ID]VanashingDataObject
 }
 
 func NewKademlia(laddr string) *Kademlia {
@@ -123,6 +127,7 @@ func NewKademlia(laddr string) *Kademlia {
 
 	k.value_map = make(map[ID][]byte)
 
+	k.vdo_map = make(map[ID]VanashingDataObject)
 	return k
 }
 
@@ -186,6 +191,44 @@ func (k *Kademlia) DoPing(host net.IP, port uint16) string {
 	k_mutex.Unlock()
 	return "OK: Ping success!"
 
+}
+
+//Store VDO locally
+func (k *Kademlia) StoreVDO(VdoID ID, vdo VanashingDataObject) string {
+	vdo_mutex.Lock()
+	k.vdo_map[VdoID] = vdo
+	vdo_mutex.Unlock()
+	return "OK: Store VDO success"
+}
+
+//Do a GETVDO RPC to get VDO
+func (k *Kademlia) DoGETVDO(NodeID ID, VdoID ID) string {
+	contact, err := k.FindContact(NodeID)
+	if err != nil {
+		return "ERR: Can't Find NodeID in local contact"
+	}
+	req := GetVDORequest{k.SelfContact, NewRandomID(), VdoID}
+	port_str := strconv.Itoa(int(contact.Port))
+	client, err := rpc.DialHTTPPath("tcp", contact.Host.String()+":"+port_str, rpc.DefaultRPCPath+port_str)
+	if err != nil {
+		return "ERR: can't reach the server"
+	}
+	res := new(GetVDOResult)
+
+	err = client.Call("KademliaCore.GetVDO", req, res)
+	if err != nil {
+		return "ERR: can't do GETVDO"
+	} else {
+		k_mutex.Lock()
+		k.Update(contact)
+		k_mutex.Unlock()
+		vdo := res.VDO
+		if vdo.NumberKeys == 0 {
+			return "Can't find VDO"
+		} else {
+			return string(UnvanishData(*k, vdo))
+		}
+	}
 }
 
 func (k *Kademlia) DoStore(contact *Contact, key ID, value []byte) string {
